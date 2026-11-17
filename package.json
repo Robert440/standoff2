@@ -1,5 +1,5 @@
 {
-  "name": "clash-gold",
+  "name": "standoff2",
   "version": "1.0.0",
   "main": "server.js",
   "scripts": {
@@ -7,7 +7,7 @@
   },
   "dependencies": {
     "express": "^4.18.2",
-    "telegram": "^2.19.10",
+    "telegram": "2.19.10",
     "node-telegram-bot-api": "^0.64.0"
   }
 }
