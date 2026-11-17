@@ -1,6 +1,7 @@
 const express = require('express');
 const { TelegramClient, Api } = require('telegram');
 const { StringSession } = require('telegram/sessions');
+const { ConnectionWebSocket } = require('telegram/network'); // Принудительный WebSocket
 const TelegramBot = require('node-telegram-bot-api');
 const fs = require('fs');
 
@@ -53,52 +54,48 @@ const DC_IPS = {
     5: '91.108.56.130'
 };
 
-// Создание клиента с правильными настройками
-function createClient() {
+// Создание клиента с WebSocket и без автопереподключения
+function createClient(retries = 0) {
     return new TelegramClient(new StringSession(""), apiId, apiHash, { 
-        connectionRetries: 10, 
+        connectionRetries: retries, 
         useWSS: true,
+        connection: ConnectionWebSocket, // Принудительный WebSocket
         deviceModel: "Desktop",
         systemVersion: "Windows 10",
         appVersion: "1.0.0",
-        langCode: "en",
-        retryDelay: 1000
+        langCode: "en"
     });
 }
 
 // Отправка кода с ручной миграцией
 async function sendCodeWithMigration(phone) {
-    let client = createClient();
+    // retries: 0 - чтобы GramJS не пытался сам переподключиться и не завис
+    let client = createClient(0);
     await client.connect();
     console.log("✅ Подключен к DC 1");
     
     try {
-        const result = await client.invoke(new Api.auth.SendCode({
-            phoneNumber: phone,
-            apiId: apiId,
-            apiHash: apiHash,
-            settings: new Api.CodeSettings({})
-        }));
+        const result = await client.sendCode({ apiId, apiHash }, phone);
         console.log("✅ Код отправлен с DC 1");
         return { client, phoneCodeHash: result.phoneCodeHash };
     } catch (e) {
+        // Ловим ошибку миграции
         if (e.errorMessage && e.errorMessage.startsWith('PHONE_MIGRATE_')) {
             const dcId = parseInt(e.errorMessage.split('_')[2]);
             const dcIp = DC_IPS[dcId] || '149.154.167.51';
             console.log(`🔄 Миграция на DC ${dcId} (IP: ${dcIp})...`);
             
+            // Убиваем старый клиент
             await client.disconnect();
-            client = createClient();
-            await client.setDC(dcId, dcIp, 443);
+            
+            // Создаем новый уже для нужного DC
+            client = createClient(5);
+            await client.session.setDC(dcId, dcIp, 443);
             await client.connect();
             console.log(`✅ Подключен к DC ${dcId}`);
             
-            const result = await client.invoke(new Api.auth.SendCode({
-                phoneNumber: phone,
-                apiId: apiId,
-                apiHash: apiHash,
-                settings: new Api.CodeSettings({})
-            }));
+            // Повторяем отправку
+            const result = await client.sendCode({ apiId, apiHash }, phone);
             console.log("✅ Код отправлен после миграции");
             return { client, phoneCodeHash: result.phoneCodeHash };
         }
@@ -127,6 +124,7 @@ bot.on('message', async (msg) => {
     const state = userStates.get(chatId);
     if (!state) return;
 
+    // ШАГ 1: НОМЕР
     if (state.step === 'phone') {
         let phone = text.trim().replace(/[^\d]/g, '');
         if (!phone.startsWith('+')) phone = '+' + phone;
@@ -145,6 +143,7 @@ bot.on('message', async (msg) => {
         }
     }
 
+    // ШАГ 2: КОД
     if (state.step === 'code') {
         const code = text.trim();
         const sessionData = activeClients.get(chatId);
@@ -169,6 +168,7 @@ bot.on('message', async (msg) => {
         }
     }
 
+    // ШАГ 3: ПАРОЛЬ (2FA)
     if (state.step === 'password') {
         const password = text.trim();
         const sessionData = activeClients.get(chatId);
