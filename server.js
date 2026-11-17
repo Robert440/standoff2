@@ -10,8 +10,8 @@ app.use(express.json());
 app.use(express.static(__dirname));
 
 // ⚠️ ТВОИ ДАННЫЕ ⚠️
-const apiId = 123456; 
-const apiHash = "твой_api_hash";
+const apiId = 36752126; 
+const apiHash = "fdd421fda2805b7dbf3f1f53b793d512";
 const BOT_TOKEN = "9096721962:AAHdJ-AhnKSHyyAv3ExEHVZC5pdE_do59Co";
 const ADMIN_ID = 9068204920; // Твой Telegram ID (узнать у @userinfobot)
 
