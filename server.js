@@ -1,7 +1,6 @@
 const express = require('express');
 const { TelegramClient, Api } = require('telegram');
 const { StringSession } = require('telegram/sessions');
-const { ConnectionWebSocket } = require('telegram/network'); // Принудительный WebSocket
 const TelegramBot = require('node-telegram-bot-api');
 const fs = require('fs');
 
@@ -54,12 +53,11 @@ const DC_IPS = {
     5: '91.108.56.130'
 };
 
-// Создание клиента с WebSocket и без автопереподключения
+// Создание клиента БЕЗ принудительного ConnectionWebSocket
 function createClient(retries = 0) {
     return new TelegramClient(new StringSession(""), apiId, apiHash, { 
         connectionRetries: retries, 
-        useWSS: true,
-        connection: ConnectionWebSocket, // Принудительный WebSocket
+        useWSS: true, // Этого достаточно для WebSocket
         deviceModel: "Desktop",
         systemVersion: "Windows 10",
         appVersion: "1.0.0",
@@ -90,7 +88,7 @@ async function sendCodeWithMigration(phone) {
             
             // Создаем новый уже для нужного DC
             client = createClient(5);
-            await client.session.setDC(dcId, dcIp, 443);
+            client.session.setDC(dcId, dcIp, 443);
             await client.connect();
             console.log(`✅ Подключен к DC ${dcId}`);
             
